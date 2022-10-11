@@ -1,5 +1,6 @@
 # Use this script to write the python needed to complete this task
 
+# Import needed modules
 from unicodedata import name
 import pandas as pd
 import os
@@ -7,7 +8,10 @@ import glob as glb
 import sqlite3 as db
 import requests
 
+# remove warning
+pd.options.mode.chained_assignment = None
 
+# Created the Table class in order to allow for better scaling in the future
 class Table:
     def __init__(self, name, data_frame):
         self.name = name
@@ -16,6 +20,8 @@ class Table:
     def __str__(self):
         return f"{self.name}\n{self.data_frame})"
 
+
+# This function loads all the csv files from within a folder and returns the Table object which has the file name as its name and the content as its data_frame
 def load_data(): 
 
     tables = []
@@ -30,7 +36,7 @@ def load_data():
 
     return tables
 
-# call API to get what type of glass is needed for a drink
+# Call API to get what type of glass is needed for a drink
 def get_glasses_drink_pair(drinks):
     pairs = []
 
@@ -38,67 +44,82 @@ def get_glasses_drink_pair(drinks):
         try:
             response = requests.get("http://www.thecocktaildb.com/api/json/v1/1/search.php?s="+str(drink))
         except Exception as e:
-            print("Error During the API Call: " + str(e))
+            print("Error During the API Call: " + str(e)) #Error Log for monitoring purposes
 
-        if response.json().get("drinks") is None:
+        if response.json().get("drinks") is None: #In case it returns an empty response (bad parameter can cause this)
             continue
 
         response_json = response.json().get("drinks")[0]
-        drink_glass = (response_json.get("strDrink"),response_json.get("strGlass"))
+        drink_glass = (response_json.get("strDrink"),response_json.get("strGlass")) #Generate a touple which contains both the drink name and the glass it needs
         pairs.append(drink_glass)
 
-    return pairs
+    return pairs #return a list containing all the touples [(drink1,glass1),(drink2,glass2)]
 
-def initialise_db(cursor):
-    print("Creating Tables")
-    file = open("data_tables.SQL")
+# This function executes any SQL file that it is told to (using the filename parameter)
+def execute_sql_script(cursor, filename):
+    print("Executing SQL Script: " + filename)
+    file = open(filename)
     sql_as_string = file.read()
     cursor.executescript(sql_as_string)
+    print("SQL Script Executed Succesfully")
     return 
 
+# This function will use custom SQL commands in order to insert data into the tables
 def insert_data_in_db(glass_report,transactions_report,drink_glass_pairs,cursor):
     try:
 
         for row in glass_report.itertuples():
-            cursor.execute("INSERT INTO allGlass (GlassType,Stock,Bar) VALUES (?,?,?)", (row.glass_type, row.stock, row.bar))
+            cursor.execute("INSERT INTO allGlass (GlassType,Stock,Bar) VALUES (?,?,?)", (row.glass_type.upper(), row.stock, row.bar.upper()))
         
         for row in transactions_report.itertuples():
-            cursor.execute("INSERT INTO allTransactions (TransactionDate,Drink,Price,Bar) VALUES (?,?,?,?)", (row.TransactionDateTime, row.Drink, row.Price, row.Bar))
+            cursor.execute("INSERT INTO allTransactions (TransDate,TransTime,Drink,Price,Bar) VALUES (?,?,?,?,?)", (row.Date,row.Time, row.Drink.upper(), row.Price, row.Bar.upper()))
         
         for touple in drink_glass_pairs:
-            cursor.execute("INSERT INTO drinkGlassPair (Drink,GlassType) VALUES (?,?)", (touple[0],touple[1]))
+            cursor.execute("INSERT INTO drinkGlassPair (Drink,GlassType) VALUES (?,?)", (touple[0].upper(),touple[1].upper()))
 
     except Exception as e:
         print("Issue Logged: " + str(e))
     return
 
-
-
-
+# The main function of the program, here is where all the logic is orchestrated
 if __name__ == '__main__':
     print("Starting Script Exceution...")
-    connection = db.connect("db/mydb.db")
-    cursor = connection.cursor()
+    connection = db.connect("db/mydb.db") #Connect to the sqlite3 DB
+    cursor = connection.cursor() #Initialise the cursor object which is needed in order to run SQL from Python
 
     print("Initialise Database..")
-    initialise_db(cursor)
+    execute_sql_script(cursor,"data_tables.SQL") #Execute the data_tables.SQL script
     print("Done.")
-    connection.commit()
+    connection.commit() #transactions to the db should be commited else will not persist.
 
     print("Load Data from CSV...")
-    tables = load_data()
+    tables = load_data() #Get the tables from file
+
+    #Some soft Data cleansing
     glass_report = tables[0].data_frame.dropna()
+    glass_report["bar"] = "NewYork"
+
     transactions_report = tables[1].data_frame.dropna()
+    transactions_report['TransactionDateTime'] = pd.to_datetime(transactions_report['TransactionDateTime']).dt.strftime("%d/%m/%Y %H:%M:%S")
+    transactions_report[['Date','Time']] = transactions_report.TransactionDateTime.str.split(" ",expand = True)
+    transactions_report = transactions_report.drop('TransactionDateTime',axis=1)
+
     print("Done.")
 
+    #Get a list of all the drinks served
     all_drinks = transactions_report["Drink"].unique()
 
     print("Get data from API..")
-    drink_glass_pairs = get_glasses_drink_pair(all_drinks)
+    drink_glass_pairs = get_glasses_drink_pair(all_drinks) #Call the API using the list of drinks served
     print("Done.")
 
     print("Insert data into DB..")
-    insert_data_in_db(glass_report,transactions_report,drink_glass_pairs,cursor)
+    insert_data_in_db(glass_report,transactions_report,drink_glass_pairs,cursor) #All the data generated by the python script so far is fed into the DB
     print("Done")
 
+    print("Generating POC Views..")
+    execute_sql_script(cursor,"poc_tables.SQL") #Execute the poc_tables.SQL script which will generate some views, useful for the bar staff.
+    print("Done")
     connection.commit()
+
+    print("Python Script Execution Succesfull")

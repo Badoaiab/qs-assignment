@@ -7,9 +7,10 @@ DROP TABLE IF EXISTS allGlass;
 DROP TABLE IF EXISTS drinkGlassPair;
 
 CREATE TABLE allTransactions(
-    TransactionDate TEXT NOT NULL, 
+    TransDate TEXT NOT NULL, 
+    TransTime TEXT NOT NULL,
     Drink TEXT NOT NULL,
-	Price REAL NOT NULL,
+	Price DECIMAL(10,2) NOT NULL,
 	Bar TEXT NOT NULL);
 
 CREATE TABLE allGlass(
