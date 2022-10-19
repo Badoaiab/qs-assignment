@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
     #Some soft Data cleansing
     glass_report = tables[0].data_frame.dropna()
-    glass_report["bar"] = "NewYork"
+    glass_report = glass_report.replace("new york", "NewYork")
 
     transactions_report = tables[1].data_frame.dropna()
     transactions_report['TransactionDateTime'] = pd.to_datetime(transactions_report['TransactionDateTime']).dt.strftime("%d/%m/%Y %H:%M:%S")
